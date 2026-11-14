@@ -62,6 +62,8 @@ LIBDRAGON_OBJS += \
 	$(BUILD_DIR)/eia608.o \
 	$(BUILD_DIR)/display.o \
 	$(BUILD_DIR)/surface.o \
+	$(BUILD_DIR)/rba_ld.o \
+	$(BUILD_DIR)/rdram_bank/rdram_bank.o \
 	$(BUILD_DIR)/console.o \
 	$(BUILD_DIR)/asset.o \
 	$(BUILD_DIR)/pifile.o \
