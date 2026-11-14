@@ -47,4 +47,21 @@ static inline void __enable_interrupts(uint32_t sr)
     C0_WRITE_STATUS(sr);
 }
 
+/**
+ * @brief Deliver one PI completion (interrupt already acknowledged).
+ *
+ * Advances the DMA queue (#__dma_pi_interrupt) first, so that the handlers
+ * registered with #register_PI_handler run afterwards and see the queue
+ * state that completion produced (finished tickets, the next transfer
+ * started). Called by the MI interrupt handler and by the DMA queue when it
+ * polls a PI completion with interrupts disabled, so the registered
+ * handlers get every completion either way.
+ *
+ * @note Must be called with interrupts disabled.
+ */
+void __pi_interrupt_dispatch(void);
+
+/** @brief DMA queue step for one PI completion (dma.c) */
+void __dma_pi_interrupt(void);
+
 #endif

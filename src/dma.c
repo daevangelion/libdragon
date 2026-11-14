@@ -66,7 +66,6 @@ static volatile uint64_t pi_ticket_started;
 /** @brief Ticket counter advanced when a transfer completes */
 static volatile uint64_t pi_ticket_done;
 
-static void pi_interrupt(void);
 static void pi_poll(void);
 
 static volatile int __dma_busy(void)
@@ -88,11 +87,14 @@ static void pi_manual_interrupt_poll(void)
 {
     // Poll PI interrupts manually. This is required when interrupts are
     // disabled (eg: during dma_wait spin loops), as otherwise the queue
-    // would never make progress.
+    // would never make progress. The completion is acknowledged here, so
+    // it is delivered like the interrupt would have been: the queue step,
+    // then the handlers registered with register_PI_handler (which would
+    // otherwise never hear of it).
     unsigned long status = *MI_INTERRUPT & *MI_MASK;
     if (status & MI_INTERRUPT_PI) {
         PI_regs->status = PI_CLEAR_INTERRUPT;
-        pi_interrupt();
+        __pi_interrupt_dispatch();
     }
 }
 
@@ -252,9 +254,12 @@ static void pi_poll(void)
 }
 
 /**
- * @brief PI interrupt handler.
+ * @brief PI completion step of the queue.
+ *
+ * Called by #__pi_interrupt_dispatch (interrupt.c) for every PI completion,
+ * before the handlers registered with register_PI_handler.
  */
-static void pi_interrupt(void)
+void __dma_pi_interrupt(void)
 {
     if (pi_state == PI_STATE_RUNNING) {
         pi_complete_current();
@@ -570,6 +575,5 @@ void __dma_init(void)
     pi_ticket_started = 0;
     pi_ticket_done = 0;
 
-    register_PI_handler(pi_interrupt);
     set_PI_interrupt(1);
 }

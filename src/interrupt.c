@@ -14,6 +14,7 @@
 #include "n64sys.h"
 #include "interrupt.h"
 #include "debug.h"
+#include "interrupt_internal.h"
 
 /** @brief Bit to set to clear the PI interrupt */
 #define PI_CLEAR_INTERRUPT 0x02
@@ -133,6 +134,16 @@ static void __call_callback( struct callback_link * head )
     }
     /* Restore TP Value */
     __th_cur_tp = tp;
+}
+
+void __pi_interrupt_dispatch(void)
+{
+    /* The DMA queue first: a registered handler that asks about (or adds
+       to) the queue must see this completion already accounted for. It is
+       not in PI_callback, where registration order (newest first) would
+       run it after every handler registered later. */
+    __dma_pi_interrupt();
+    __call_callback(PI_callback);
 }
 
 /**
@@ -265,7 +276,7 @@ void __MI_handler(void)
         /* Trigger kernel event */
         if (__kernel) __kcond_broadcast_isr(&__kirq_cond_pi);
 
-        __call_callback(PI_callback);
+        __pi_interrupt_dispatch();
     }
 
     if( status & MI_INTERRUPT_DP )
