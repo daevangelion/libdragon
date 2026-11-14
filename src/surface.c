@@ -1,17 +1,17 @@
 /**
  * @file surface.c
- * @author Dennis Heinze <dennisjp.heinze@gmail.com>
- * @author Giovanni Bajo <giovannibajo@gmail.com>
- * @brief Surface buffers used to draw images
- * @ingroup graphics
+ * @brief Surface buffers — banked overlay for libdragon-banked.
+ *
+ * Based on libdragon surface.c; large buffers prefer rdram_bank arenas.
  */
-
 #include "surface.h"
 #include "n64sys.h"
 #include "debug.h"
+#include "rba_ld.h"
 #include <assert.h>
 #include <string.h>
 #include <inttypes.h>
+#include <malloc.h>
 
 const char* tex_format_name(tex_format_t fmt)
 {
@@ -33,25 +33,34 @@ const char* tex_format_name(tex_format_t fmt)
 
 surface_t surface_alloc(tex_format_t format, uint16_t width, uint16_t height)
 {
-    // A common mistake is to call surface_alloc with the wrong argument order.
-    // Try to catch it by checking that the format is not valid.
-    // Do not limit ourselves to tex_format_t enum values, as people might want
-    // to test weird RDP formats (e.g. RGBA8) to find out what happens.
     assertf((format & ~SURFACE_FLAGS_TEXFORMAT) == 0,
         "invalid surface format: 0x%x (%d)", format, format);
-    return (surface_t){ 
+
+    size_t nbytes = (size_t)height * TEX_FORMAT_PIX2BYTES(format, width);
+    void *buf = NULL;
+
+    if (rba_ld_ready())
+        buf = rba_ld_alloc_surface(nbytes);
+
+    if (!buf)
+        buf = malloc_uncached_aligned(64, nbytes);
+
+    return (surface_t){
         .flags = format | SURFACE_FLAGS_OWNEDBUFFER,
         .width = width,
         .height = height,
         .stride = TEX_FORMAT_PIX2BYTES(format, width),
-        .buffer = malloc_uncached_aligned(64, height * TEX_FORMAT_PIX2BYTES(format, width)),
+        .buffer = buf,
     };
 }
 
 void surface_free(surface_t *surface)
 {
     if (surface_has_owned_buffer(surface)) {
-        free_uncached(surface->buffer);
+        if (rba_ld_ready())
+            rba_ld_free(surface->buffer);
+        else
+            free_uncached(surface->buffer);
     }
     memset(surface, 0, sizeof(surface_t));
 }

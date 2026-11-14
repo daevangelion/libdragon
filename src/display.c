@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "debug.h"
 #include "surface.h"
+#include "rba_ld.h"
 #include "rsp.h"
 #include "kirq.h"
 #include "accounting_internal.h"
@@ -394,6 +395,8 @@ void display_init( resolution_t res, bitdepth_t bit, uint32_t num_buffers, gamma
     pending_interlace_mode = res.interlaced;
     pending_vi_frames_left = -1;
 
+    /* Bank-aware arenas before framebuffer malloc */
+    rba_ld_init(NULL);
     apply_display_vi_config(res, bit, gamma, filters);
 
     surfaces = malloc(sizeof(surface_t) * __num_buffers);
@@ -510,12 +513,18 @@ void display_close()
 
     if (surf_zbuf.buffer)
     {
-        surface_free(&surf_zbuf);
-        memset(&surf_zbuf_view, 0, sizeof(surf_zbuf_view));
         if (zbuf_sbrk_top) {
             sbrk_top(-(int)(__alloc_width * __alloc_height * 2));
             zbuf_sbrk_top = false;
+            memset(&surf_zbuf, 0, sizeof(surf_zbuf));
+        } else if (surface_has_owned_buffer(&surf_zbuf)) {
+            surface_free(&surf_zbuf);
+        } else {
+            /* rba_ld_alloc_z path (surface_make without OWNEDBUFFER) */
+            rba_ld_free(surf_zbuf.buffer);
+            memset(&surf_zbuf, 0, sizeof(surf_zbuf));
         }
+        memset(&surf_zbuf_view, 0, sizeof(surf_zbuf_view));
     }
 
     // Blank the image and wait until it actually happens, before
@@ -611,18 +620,23 @@ surface_t* display_get(void)
 surface_t* display_get_zbuf(void)
 {
     if (surf_zbuf.buffer == NULL) {
-        /* Try to allocate the Z-Buffer from the top of the heap (near the stack).
-           This basically puts it in the last memory bank, hopefully separating it
-           from framebuffers, which provides a nice speed gain. */
+        /* Prefer rdram_bank Z class (isolated bank). Fallback: stock sbrk_top. */
         uint32_t alloc_size = __alloc_width * __alloc_height * 2;
-        void *buf = sbrk_top(alloc_size);
-        if (buf != (void*)-1) {
-            data_cache_hit_invalidate(buf, alloc_size);
-            surf_zbuf = surface_make(UncachedAddr(buf), FMT_RGBA16, (uint16_t)__alloc_width, (uint16_t)__alloc_height, (uint16_t)(__alloc_width * 2));
-            zbuf_sbrk_top = true;
+        void *buf = NULL;
+        zbuf_sbrk_top = false;
+        if (rba_ld_ready())
+            buf = rba_ld_alloc_z(alloc_size);
+        if (buf) {
+            surf_zbuf = surface_make(buf, FMT_RGBA16, (uint16_t)__alloc_width, (uint16_t)__alloc_height, (uint16_t)(__alloc_width * 2));
         } else {
-            surf_zbuf = surface_alloc(FMT_RGBA16, (uint16_t)__alloc_width, (uint16_t)__alloc_height);
-            zbuf_sbrk_top = false;
+            buf = sbrk_top(alloc_size);
+            if (buf != (void*)-1) {
+                data_cache_hit_invalidate(buf, alloc_size);
+                surf_zbuf = surface_make(UncachedAddr(buf), FMT_RGBA16, (uint16_t)__alloc_width, (uint16_t)__alloc_height, (uint16_t)(__alloc_width * 2));
+                zbuf_sbrk_top = true;
+            } else {
+                surf_zbuf = surface_alloc(FMT_RGBA16, (uint16_t)__alloc_width, (uint16_t)__alloc_height);
+            }
         }
     }
     surf_zbuf_view = surface_make(surf_zbuf.buffer, FMT_RGBA16, (uint16_t)__width, (uint16_t)__height, (uint16_t)(__width * 2));
