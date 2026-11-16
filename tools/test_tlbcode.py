@@ -29,6 +29,15 @@ class TlbcodeTests(unittest.TestCase):
                 TOOL['generate'](types.SimpleNamespace(units=source,
                     sections=self.root / 'sections.ld', directory=self.root / 'directory.ld'))
 
+    def test_generate_rejects_data_selectors(self):
+        for name in ('.data.x', '.sdata.x', '.bss.x', '.sbss.x'):
+            with self.subTest(section=name):
+                source = self.root / 'units.json'
+                source.write_text('{"bad":["' + name + '"]}')
+                with self.assertRaisesRegex(ValueError, 'must name text or rodata'):
+                    TOOL['generate'](types.SimpleNamespace(units=source,
+                        sections=self.root / 'sections.ld', directory=self.root / 'directory.ld'))
+
     def test_object_keep_and_link_limit(self):
         source = self.root / 'units.json'
         source.write_text('{"fmv":["*h264_decoder.o"]}')
@@ -87,6 +96,19 @@ class TlbcodeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ctors.*points into code unit'):
             self.pack(path)
         self.assertFalse((self.root / 'test.tlbcode').exists())
+
+    def test_pack_rejects_writable_and_nobits_units(self):
+        path = self.elf_copy()
+        elf = TOOL['Elf'](path)
+        index = next(i for i, name in enumerate(elf.names) if name.startswith('.tlbcode.'))
+        section = elf.sh[index]
+        table = struct.unpack_from('>I', elf.data, 32)[0]
+        for field, value in ((8, section[2] | 1), (4, 8)):
+            with self.subTest(field=field):
+                data = bytearray(ELF_PATH.read_bytes())
+                struct.pack_into('>I', data, table + index * 40 + field, value)
+                with self.assertRaisesRegex(ValueError, 'read-only PROGBITS'):
+                    self.pack(self.elf_copy(data))
 
 
 if __name__ == '__main__':

@@ -10,6 +10,8 @@ import struct
 PAGE = 4096
 NAME = re.compile(r"[a-z][a-z0-9_]{0,30}\Z")
 PATTERN = re.compile(r"[a-zA-Z0-9_./*?\[\]-]+\Z")
+SECTION_PREFIXES = ('.text', '.rodata', '.rdata', 'keep.text', 'keep.rodata',
+                    '.gnu.linkonce.t.', '.gnu.linkonce.r.')
 
 
 def generate(args):
@@ -24,7 +26,9 @@ def generate(args):
         for pattern in patterns:
             if not isinstance(pattern, str) or not PATTERN.fullmatch(pattern):
                 raise ValueError("invalid input pattern")
-            if pattern.startswith('.') or pattern.startswith('keep.'):
+            if pattern.startswith(('.', 'keep.')) and '/' not in pattern:
+                if not pattern.startswith(SECTION_PREFIXES):
+                    raise ValueError("explicit code-unit selectors must name text or rodata")
                 body.append(f"KEEP(*({pattern}))")
             else:
                 body.append(f"KEEP({pattern}(keep.text.* keep.rodata.*))")
@@ -142,6 +146,8 @@ def pack(args):
     offset = (48 + len(units) * 48 + PAGE - 1) & -PAGE
     records, payload = bytearray(), bytearray(offset)
     for name, s in units:
+        if s[1] != 1 or s[2] & 1:
+            raise ValueError("code units must be read-only PROGBITS, not writable or NOBITS")
         if (not NAME.fullmatch(name) or s[3] % 8192 or not s[5] or s[5] % PAGE or
                 s[5] > 62 * PAGE or not 0xc1000000 <= s[3] < 0xc2000000):
             raise ValueError("invalid unit extent")

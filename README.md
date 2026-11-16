@@ -205,6 +205,8 @@ Set `N64_TLBCODE_UNITS=units.json` before including `n64.mk`. The JSON object
 maps names to lists of linker input patterns: object patterns such as
 `"*h264_decoder.o"` select text and rodata, while section patterns such as
 `".text.boot_setup"` select individual explicitly annotated functions.
+Explicit selectors are limited to text/rodata prefixes; the packer also rejects
+writable or NOBITS unit output, rather than silently enabling data paging.
 Unit data, small data, and BSS remain resident. See `examples/tlbcode` for
 `fmv` and one-shot `init` memberships and `tests/tlbcode-units.json` for a
 section-based unit.
