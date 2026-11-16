@@ -63,6 +63,7 @@
 #include "ksemaphore.h"
 #include "n64sys.h"
 #include "scratch.h"
+#include "tlbcode.h"
 #include "vaddr64.h"
 #include "dd.h"
 #include "backtrace.h"

@@ -21,6 +21,7 @@
 #include "n64sys.h"
 #include "mi.h"
 #include "emux.h"
+#include "tlbcode_internal.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -218,8 +219,9 @@ static void mips_disasm(uint32_t *ptr, char *out, int n) {
 }
 
 static bool disasm_valid_pc(uint32_t pc) {
-    // TODO: handle TLB ranges?
-    return pc >= 0x80000000 && pc < 0x80800000 && (pc & 3) == 0;
+    return (pc & 3) == 0 &&
+        ((pc >= 0x80000000 && pc < 0x80800000) ||
+         (tlbcode_address_valid && tlbcode_address_valid(pc)));
 }
 
 /* Good breakpoints for wrapping C++-style symbols and signatures. */

@@ -167,10 +167,23 @@ endef
 
 $(foreach tool,$(TOOLS),$(eval $(call TOOL_template,$(tool))))
 all: $(TOOLS)
+all: tlbcode
+.PHONY: tlbcode tlbcode-install tlbcode-clean
+tlbcode:
+tlbcode-install:
+	mkdir -p $(INSTALLDIR)/bin
+	install -m 0755 tlbcode.py $(INSTALLDIR)/bin/tlbcode
+tlbcode-clean:
+install: tlbcode-install
 install: $(foreach tool,$(TOOLS),$(tool)-install)
 clean: $(foreach tool,$(TOOLS),$(tool)-clean) common-clean
 	rm -f ${n64tool_OBJS} ${n64metadata_OBJS} ${n64sym_OBJS} ${n64symdump_OBJS} ${ed64romconfig_OBJS} 
 .PHONY: all install clean
+
+.PHONY: test-tlbcode
+test-tlbcode:
+	@test -n "$(TLBCODE_TEST_ELF)" || { echo "Set TLBCODE_TEST_ELF to the mapped testrom ELF"; exit 1; }
+	python3 test_tlbcode.py "$(TLBCODE_TEST_ELF)" -v
 
 ifneq ($(V),1)
 .SILENT:

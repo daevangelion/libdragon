@@ -374,6 +374,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+extern const char __tlbcode_build_id[] __attribute__((weak));
 
 static void rdpq_assert_handler(rsp_snapshot_t *state, uint16_t assert_code);
 
@@ -444,7 +445,14 @@ static void __rdpq_interrupt(void) {
 
     // If there was a callback registered, call it.
     if (w0) {
-        void (*callback)(void*) = (void (*)(void*))CachedAddr(w0 | 0x80000000);
+        uintptr_t address;
+        if (__tlbcode_build_id) {
+            uintptr_t region = w0 & 0x800000 ? 0xC0000000 : 0x80000000;
+            address = region | ((w0 & 0x7FFFFF) << 2);
+        } else {
+            address = (uintptr_t)CachedAddr(w0 | 0x80000000);
+        }
+        void (*callback)(void*) = (void (*)(void*))address;
         void* arg = (void*)w1;
 
         callback(arg);
@@ -1189,7 +1197,18 @@ void rdpq_set_tile_autotmem(int16_t tmem_bytes)
 
 void rdpq_sync_full(void (*callback)(void*), void* arg)
 {
-    uint32_t w0 = PhysicalAddr(callback);
+    uint32_t w0;
+    if (__tlbcode_build_id) {
+        /* 23 word-offset bits plus a KSEG2 tag also support stack trampolines. */
+        uintptr_t address = (uintptr_t)callback;
+        assertf(!callback || ((address & 0xFE000003) == 0x80000000) ||
+            ((address & 0xFE000003) == 0xC0000000),
+            "RDP callback outside the KSEG0/KSEG2 32 MiB code windows");
+        w0 = callback ? ((address & 0x01FFFFFF) >> 2) |
+            ((address & 0x40000000) ? 0x800000 : 0) : 0;
+    } else {
+        w0 = PhysicalAddr(callback);
+    }
     uint32_t w1 = (uint32_t)arg;
 
     // We encode in the command (w0/w1) the callback for the RDP interrupt,

@@ -76,8 +76,24 @@ N64_METADATA = $(N64_BINDIR)/n64metadata
 N64_DSO = $(N64_BINDIR)/n64dso
 N64_DSOEXTERN = $(N64_BINDIR)/n64dso-extern
 N64_DSOMSYM = $(N64_BINDIR)/n64dso-msym
+N64_TLBCODE_TOOL = $(N64_BINDIR)/tlbcode
 
-N64_C_AND_CXX_FLAGS =  -march=vr4300 -mtune=vr4300 -mabi=o64 -I$(N64_INCLUDEDIR)/newlib_overrides -I$(N64_INCLUDEDIR) -include ktls.h
+# An explicit units file is required. Unset/0 keeps the original linker path.
+N64_TLBCODE ?= 0
+N64_TLBCODE_UNITS ?=
+ifeq ($(N64_TLBCODE),1)
+ifeq ($(strip $(N64_TLBCODE_UNITS)),)
+$(error N64_TLBCODE=1 requires N64_TLBCODE_UNITS=<units.json>)
+endif
+N64_LINKSCRIPT = n64_tlbcode.ld
+N64_TLBCODE_SECTIONS = $(BUILD_DIR)/tlbcode-units.ld
+N64_TLBCODE_DIRECTORY = $(BUILD_DIR)/tlbcode-directory.ld
+N64_TLBCODE_CFLAGS = -DN64_TLBCODE=1
+else
+N64_LINKSCRIPT = n64.ld
+endif
+
+N64_C_AND_CXX_FLAGS = -march=vr4300 -mtune=vr4300 -mabi=o64 -I$(N64_INCLUDEDIR)/newlib_overrides -I$(N64_INCLUDEDIR) -include ktls.h $(N64_TLBCODE_CFLAGS)
 N64_C_AND_CXX_FLAGS += -falign-functions=32   # NOTE: if you change this, also change backtrace() in backtrace.c
 N64_C_AND_CXX_FLAGS += -ffunction-sections -fdata-sections -g -ffile-prefix-map="$(CURDIR)"=$(N64_BACKTRACE_FILE_PREFIX)
 N64_C_AND_CXX_FLAGS += -ffast-math -ftrapping-math -fno-associative-math
@@ -88,7 +104,10 @@ N64_CFLAGS = $(N64_C_AND_CXX_FLAGS) -std=gnu17
 N64_CXXFLAGS = $(N64_C_AND_CXX_FLAGS) -std=gnu++17
 N64_ASFLAGS = -mtune=vr4300 -march=vr4300 -mabi=o64 -Wa,--fatal-warnings -I$(N64_INCLUDEDIR)
 N64_RSPASFLAGS = -march=mips1 -mabi=32 -Wa,--fatal-warnings -I$(N64_INCLUDEDIR)
-N64_LDFLAGS = -g -L$(N64_LIBDIR) -ldragon -lm -ldragonsys -Tn64.ld --gc-sections --wrap __do_global_ctors
+N64_LDFLAGS = -g -L$(N64_LIBDIR) -ldragon -lm -ldragonsys -T$(N64_LINKSCRIPT) --gc-sections --wrap __do_global_ctors
+ifeq ($(N64_TLBCODE),1)
+N64_LDFLAGS := -L$(BUILD_DIR) $(N64_LDFLAGS) --emit-relocs
+endif
 N64_DSOLDFLAGS = --emit-relocs --unresolved-symbols=ignore-all --nmagic -T$(N64_LIBDIR)/dso.ld
 ifneq ($(filter 1 2,$(LIBDRAGON_PREVIEW)),)
 N64_C_AND_CXX_FLAGS += -DLIBDRAGON_PREVIEW=$(LIBDRAGON_PREVIEW)
@@ -145,6 +164,9 @@ RSPASFLAGS+=-MMD
 %.z64: RSPASFLAGS+=$(N64_RSPASFLAGS)
 %.z64: LDFLAGS+=$(N64_LDFLAGS)
 %.z64: $(BUILD_DIR)/%.elf
+ifeq ($(N64_TLBCODE),1)
+	$(N64_TLBCODE_TOOL) pack $< $<.tlbcode
+endif
 	@echo "    [Z64] $@"
 	$(N64_SYM) --all $< $<.sym
 	cp $< $<.stripped
@@ -156,6 +178,7 @@ RSPASFLAGS+=-MMD
 		$<.sym \
 		$(filter %.dfs, $^) \
 		$(filter %.msym, $^) \
+		$(if $(filter 1,$(N64_TLBCODE)),$<.tlbcode) \
 		$(N64_TOOLFILES)
 	if [ ! -z "$(strip $(N64_ED64ROMCONFIGFLAGS))" ]; then \
 		$(N64_ED64ROMCONFIG) $(N64_ED64ROMCONFIGFLAGS) $(BUILD_DIR)/$@.tmp; \
@@ -231,7 +254,17 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.cpp
 	@echo "    [CXX] $<"
 	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
-%.elf: $(N64_LIBDIR)/libdragon.a $(N64_LIBDIR)/libdragonsys.a $(N64_LIBDIR)/n64.ld
+ifeq ($(N64_TLBCODE),1)
+N64_TLBCODE_DEFAULT_GOAL := $(.DEFAULT_GOAL)
+$(N64_TLBCODE_SECTIONS): $(N64_TLBCODE_UNITS) $(N64_TLBCODE_TOOL)
+	@mkdir -p $(BUILD_DIR)
+	$(N64_TLBCODE_TOOL) generate $< $@ $(N64_TLBCODE_DIRECTORY)
+$(N64_TLBCODE_DIRECTORY): $(N64_TLBCODE_SECTIONS)
+	$(N64_TLBCODE_TOOL) generate $(N64_TLBCODE_UNITS) $(N64_TLBCODE_SECTIONS) $@
+.DEFAULT_GOAL := $(N64_TLBCODE_DEFAULT_GOAL)
+endif
+
+%.elf: $(N64_LIBDIR)/libdragon.a $(N64_LIBDIR)/libdragonsys.a $(N64_LIBDIR)/$(N64_LINKSCRIPT) $(if $(filter 1,$(N64_TLBCODE)),$(N64_TLBCODE_SECTIONS) $(N64_TLBCODE_DIRECTORY))
 	@mkdir -p $(dir $@)
 	@echo "    [LD] $@"
 # We always use g++ to link except for ucode and DSO files because of the inconsistencies

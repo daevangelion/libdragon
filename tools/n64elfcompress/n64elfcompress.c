@@ -445,6 +445,17 @@ bool process(char *infn, char *outfn, int compression)
         }
     }
 
+    /* IPL3 has no TLB mappings. Deploy mapped executable segments at their
+     * KSEG0 load address; retain virtual PCs in the original, unstripped ELF.
+     * Do this even at compression level zero (IPL3 loads those by p_vaddr).
+     */
+    for (int i = 0; i < elf->header.e_phnum; i++) {
+        elf_phdr_t *ph = &elf->phdrs[i];
+        if (ph->p_vaddr >= 0xC0000000 && ph->p_vaddr < 0xE0000000 &&
+            ph->p_paddr >= 0x80000000 && ph->p_paddr < 0x80800000)
+            ph->p_vaddr = ph->p_paddr;
+    }
+
     // Compress program header loadable sections
     if (compression > 0) {
         for (int i = 0; i < elf->header.e_phnum; i++) {

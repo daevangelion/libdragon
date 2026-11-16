@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include "tlbcode_internal.h"
 
 /** Invalid TLS Minimum Address */
 #define TLS_INVALID_MIN (uint32_t)(KERNEL_TP_INVALID-TP_OFFSET)
@@ -324,6 +325,19 @@ static const char* __get_exception_name(exception_t *ex)
 	// we can provide a more detailed exception name.
 	uint32_t epc = ex->regs->epc + (ex->regs->cr & C0_CAUSE_BD ? 4 : 0);
 	uint64_t badvaddr = C0_BADVADDR();
+
+	if (tlbcode_unloaded_name &&
+		(ex->code == EXCEPTION_CODE_TLB_LOAD_I_MISS ||
+		 ex->code == EXCEPTION_CODE_TLB_STORE_MISS ||
+		 ex->code == EXCEPTION_CODE_TLB_MODIFICATION)) {
+		const char *name = tlbcode_unloaded_name((uint32_t)badvaddr);
+		if (!name) name = tlbcode_unloaded_name(epc);
+		if (name) {
+			static char unit_error[80];
+			snprintf(unit_error, sizeof(unit_error), "code unit %s not loaded", name);
+			return unit_error;
+		}
+	}
 
 	switch (ex->code) {
 	case EXCEPTION_CODE_FLOATING_POINT: {

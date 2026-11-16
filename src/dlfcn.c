@@ -499,6 +499,12 @@ static dl_module_t *lookup_module(const void *addr)
 
 void *dlopen(const char *filename, int mode)
 {
+    /* A heap DSO's J26 relocations cannot call KSEG2 code without stubs. */
+    extern const char __tlbcode_build_id[] __attribute__((weak));
+    if (__tlbcode_build_id) {
+        output_error("dlopen is unsupported for TLB-mapped executables");
+        return NULL;
+    }
     dl_module_t *handle;
     assertf(strlen(filename) <= 255, "dlopen only supports filenames with no more than 255 characters");
     handle = search_module_filename(filename);

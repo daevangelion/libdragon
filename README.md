@@ -194,6 +194,61 @@ When a preview API is considered settled, it is promoted to stable and the
 marking is simply removed. Nothing needs to change in your project, and you can
 drop `LIBDRAGON_PREVIEW` once you no longer use any preview API.
 
+## Opt-in TLB code units
+
+This fork supports explicit code residency with `N64_TLBCODE=1`. Leave the
+option unset (or set it to `0`) to use the original linker script and boot path.
+The same installed SDK supports both modes; use separate build directories
+when switching modes, since compiler options are not make dependencies.
+
+Set `N64_TLBCODE_UNITS=units.json` before including `n64.mk`. The JSON object
+maps names to lists of linker input patterns: object patterns such as
+`"*h264_decoder.o"` select text and rodata, while section patterns such as
+`".text.boot_setup"` select individual explicitly annotated functions.
+Unit data, small data, and BSS remain resident. See `examples/tlbcode` for
+`fmv` and one-shot `init` memberships and `tests/tlbcode-units.json` for a
+section-based unit.
+
+All normal text uses KSEG2 starting at `0xC0001000`; a small KSEG0 boot path
+installs wired 1 MiB-page pairs before entering it. Units occupy distinct,
+fixed 1 MiB windows starting at `0xC1000000`. Unit sections are not PT_LOAD.
+The installed `tlbcode` Python 3 tool generates the linker fragments, extracts
+the page-aligned unit blob, and binds it to a SHA-256 resident ELF build ID.
+The ROM recipe bundles that blob as `.tlbcode`; the deployment compressor
+uses KSEG0 load addresses while the original ELF keeps virtual debug symbols.
+The build also emits `<elf>.tlbcode.refs`, listing resident section/symbol
+references into units. Review it for unintended COMDAT/extern-inline copies
+and callbacks that outlive a load interval. Intentional post-load calls and
+resident function-pointer tables are allowed. Constructor and destructor
+tables (`.ctors`, `.dtors`, `.preinit_array`, `.init_array`, `.fini_array`)
+must not target units: packing rejects such targets before a ROM is emitted.
+Unit sizes above 62 pages are rejected by the linker and packer.
+
+Call `tlbcode_init()`, find a unit with `tlbcode_find()`, and load it using
+`tlbcode_load(unit, frames, unit->page_count)`. The caller supplies distinct,
+4 KiB aligned cached RDRAM frames (not necessarily contiguous); both pages and
+the frame-pointer array remain borrowed until `tlbcode_unload()`. No runtime
+heap allocation or demand paging occurs. Each pair consumes one of the 32 TLB
+slots after the wired resident entries. Oversubscribing these slots fails.
+Loading uses the PI DMA queue and explicit cache maintenance.
+
+Serialize load/unload in application code. Before unloading, return out of
+the unit and quiesce every callback, thread, deferred RSP/RDP command, and
+interrupt that could enter it. Do not DMA unit rodata directly to the RCP:
+ordinary `PhysicalAddr` cannot translate these noncontiguous mappings; keep
+RCP-visible assets resident. This feature does not page data or translate
+arbitrary pointers for DMA. Debugger PC checks and symbols understand unit
+ranges, and accesses to an unloaded unit report its name.
+DSOs cannot safely relocate J26 calls from KSEG0 heap code to mapped code;
+`dlopen` therefore returns NULL with an explicit error in mapped executables.
+Ordinary ROMs retain the existing DSO behavior.
+
+Build the example with `make -C examples/tlbcode N64_TLBCODE=1 CLIP=/path/to/clip.h264`,
+where the clip is encoded with `videoconv64 --codec h264`. Its frame callback
+stops after 24 frames, unloads the FMV unit, then reallocates and touches the
+released memory. Emulator load timings are not hardware measurements: ares
+models PI at fixed speed and has no micro-TLB.
+
 ## Upgrading libdragon
 
 Check the [ChangeLog](https://github.com/DragonMinded/libdragon/wiki/Stable-branch--Changelog)

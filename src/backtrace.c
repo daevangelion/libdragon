@@ -109,11 +109,12 @@ extern uint32_t __text_end[];
 /** @brief Module resolver */
 module_lookup_func __bt_lookup_module;
 /** @brief Check if addr is a valid PC address */
+#include "tlbcode_internal.h"
 static bool is_valid_address(uint32_t addr)
 {
-    // TODO: for now we only handle RAM (cached access). This should be extended to handle
-    // TLB-mapped addresses for instance.
-    return addr >= 0x80000400 && addr < 0x80800000 && (addr & 3) == 0;
+    return (addr & 3) == 0 &&
+        ((addr >= 0x80000400 && addr < 0x80800000) ||
+         (tlbcode_address_valid && tlbcode_address_valid(addr)));
 }
 
 char* __symbolize(void *vaddr, char *buf, int size)
@@ -444,7 +445,8 @@ bool backtrace_symbols_cb(void **buffer, int size, uint32_t flags,
         // callback but using unsymbolized addresses.
         symtable_header_t symt_header = symt_open(buffer[i]);
         bool has_symt = symt_header.head[0];
-        if (!is_valid_address(needle)) {
+        if (!is_valid_address(needle) &&
+            !(tlbcode_address_known && tlbcode_address_known(needle))) {
             // If the address is before the first symbol, we call it a NULL pointer, as that is the most likely case
             cb(cb_arg, &(backtrace_frame_t){
                 .addr = needle,

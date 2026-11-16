@@ -1,0 +1,4 @@
+{
+  "fmv": ["*h264_decoder.o", "*h264.o", "*yuv.o", "*fmv.o", "*video.o", "*video_sync.o", "*subtitles.o"],
+  "init": [".text.tlbcode_example_init"]
+}

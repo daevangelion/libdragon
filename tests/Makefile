@@ -1,6 +1,9 @@
 BUILD_DIR=build
 DSO_COMPRESS_LEVEL=0
 LIBDRAGON_PREVIEW = 2  # The test ROM covers the whole library, preview APIs included
+ifeq ($(N64_TLBCODE),1)
+N64_TLBCODE_UNITS ?= tlbcode-units.json
+endif
 include $(N64_INST)/include/n64.mk
 
 N64_MKMATERIAL = $(N64_INST)/bin/mkmaterial

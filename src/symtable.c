@@ -333,10 +333,12 @@ typedef struct {
     int bits_in_cache;          ///< Number of bits in the cache
 } bit_reader_t;
 
+#include "tlbcode_internal.h"
 /** @brief Check if addr is inside main executable text section */
 static bool is_main_exe_text_address(uint32_t addr)
 {
-    return addr >= (uint32_t)__text_start && addr < (uint32_t)__text_end;
+    return (addr >= (uint32_t)__text_start && addr < (uint32_t)__text_end) ||
+        (tlbcode_address_known && tlbcode_address_known(addr));
 }
 
 symtable_header_t symt_open(void *addr) {

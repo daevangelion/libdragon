@@ -45,6 +45,8 @@ LIBDRAGON_OBJS += \
 	$(BUILD_DIR)/dir.o \
 	$(BUILD_DIR)/inthandler.o \
 	$(BUILD_DIR)/entrypoint.o \
+	$(BUILD_DIR)/entrypoint_tlbcode.o \
+	$(BUILD_DIR)/tlbcode.o \
 	$(BUILD_DIR)/entropy.o \
 	$(BUILD_DIR)/rand.o \
 	$(BUILD_DIR)/utils.o \
@@ -190,6 +192,7 @@ install: install-mk libdragon
 	mkdir -p $(INSTALLDIR)/$(N64_TARGET)/lib
 	install -Cv -m 0644 libdragon.a $(INSTALLDIR)/$(N64_TARGET)/lib/libdragon.a
 	install -Cv -m 0644 n64.ld $(INSTALLDIR)/$(N64_TARGET)/lib/n64.ld
+	install -Cv -m 0644 n64_tlbcode.ld $(INSTALLDIR)/$(N64_TARGET)/lib/n64_tlbcode.ld
 	install -Cv -m 0644 dso.ld $(INSTALLDIR)/$(N64_TARGET)/lib/dso.ld
 	install -Cv -m 0644 rsp.ld $(INSTALLDIR)/$(N64_TARGET)/lib/rsp.ld
 	install -Cv -m 0644 libdragonsys.a $(INSTALLDIR)/$(N64_TARGET)/lib/libdragonsys.a

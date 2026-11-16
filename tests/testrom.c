@@ -229,6 +229,7 @@ int assert_equal_mem(TestContext *ctx, const char *file, int line, const uint8_t
 #include "test_math.c"
 #include "test_fm.c"
 #include "test_magma.c"
+#include "test_tlbcode.c"
 
 /**********************************************************************
  * MAIN
@@ -249,6 +250,10 @@ static const struct Testsuite
 	uint32_t duration;
 	uint32_t flags;
 } tests[] = {
+#if N64_TLBCODE
+	TEST_FUNC(test_tlbcode,                    0, TEST_FLAGS_NO_BENCHMARK),
+	TEST_FUNC(test_tlbcode_dso_rejected,       0, TEST_FLAGS_NO_BENCHMARK),
+#endif
 	TEST_FUNC(test_exception,                  5, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_exception_syscall,          0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_constructors,               0, TEST_FLAGS_NO_BENCHMARK),
@@ -428,6 +433,15 @@ static const struct Testsuite
 	TEST_FUNC(test_gl_texture_completeness,    0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_gl_list,					   0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_gl_cull,					   0, TEST_FLAGS_NO_BENCHMARK),
+#if N64_TLBCODE
+	{"test_dl_syms", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dladdr", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dl_relocs", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dl_imports", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dlsym_rtld_default", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dlclose", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+	{"test_dl_ctors", test_tlbcode_dso_unsupported, 0, TEST_FLAGS_NO_BENCHMARK},
+#else
 	TEST_FUNC(test_dl_syms,                   0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_dladdr,             0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_dl_relocs,             0, TEST_FLAGS_NO_BENCHMARK),
@@ -435,6 +449,7 @@ static const struct Testsuite
 	TEST_FUNC(test_dlsym_rtld_default,           0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_dlclose,           0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_dl_ctors,           0, TEST_FLAGS_NO_BENCHMARK),
+#endif
 	TEST_FUNC(test_mat4_mul_two_identities,				0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_mat4_mul_scale_translation,			0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_mat3_mul_two_identities,				0, TEST_FLAGS_NO_BENCHMARK),
