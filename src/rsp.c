@@ -206,8 +206,8 @@ void __rsp_check_assert(const char *file, int line, const char *func)
 
 #ifndef NDEBUG
 /// @cond
-// RSP crash handler implementation
-__attribute__((noreturn, format(printf, 4, 5)))
+// Weak default: applications may replace the fatal display; default unchanged.
+__attribute__((weak, noreturn, format(printf, 4, 5)))
 void __rsp_crash(const char *file, int line, const char *func, const char *msg, ...)
 {
     volatile uint32_t *DP_REGS = (volatile uint32_t*)0xA4100000;
