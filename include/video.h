@@ -66,6 +66,7 @@
 #define LIBDRAGON_VIDEO_H
 
 #include "preview.h"
+#include <stddef.h>
 #include "yuv.h"
 
 #ifdef __cplusplus
@@ -83,6 +84,38 @@ typedef struct video_codec_s video_codec_t;
 /** @brief A video handle */
 typedef struct video_s video_t;
 
+/**
+ * @brief Caller-owned decoder memory.
+ *
+ * Optional H.264 allocator. The callbacks, structure and context must remain
+ * valid until video_close. alloc returns a cached pointer with the requested
+ * power-of-two alignment, or NULL; free accepts those same cached pointers.
+ * The decoder converts picture memory to its uncached alias internally.
+ * With no allocator, the existing SDK heap behavior is unchanged.
+ *
+ * Video codec operations are serialized by the caller, not interrupt-safe.
+ */
+typedef struct video_allocator_s {
+    void *context;
+    void *(*alloc)(void *context, size_t bytes, size_t alignment);
+    void (*free)(void *context, void *memory);
+} video_allocator_t;
+
+/**
+ * @brief Caller-owned sequential/seekable elementary stream.
+ *
+ * read returns bytes copied, 0 at EOF or -1 on failure; seek is absolute and
+ * returns 0 on success, -1 on failure. The structure/context remain valid
+ * through close and are not closed/freed by the SDK. Reads must provide as
+ * much of the requested span as possible, except at EOF: an H.264 NAL must
+ * fit the decoder input window. Callbacks may service other main-thread work.
+ */
+typedef struct video_source_s {
+    void *context;
+    int (*read)(void *context, void *memory, unsigned bytes);
+    int (*seek)(void *context, uint32_t offset);
+} video_source_t;
+
 /** @brief Video playback parameters*/
 typedef struct video_parms_s {
     /**
@@ -97,6 +130,11 @@ typedef struct video_parms_s {
      * If 0 (default), #video_poll is effectively disabled and cannot decode ahead.
      */
     int buffered_pics;
+    /** Optional H.264 memory provider; unsupported codecs reject it. */
+    const video_allocator_t *allocator;
+    /** Optional H.264 source, bypassing open/read/close and .seek sidecars.
+     * allocator mode also disables automatic .seek sidecar loading. */
+    const video_source_t *source;
 } video_parms_t;
 
 /**

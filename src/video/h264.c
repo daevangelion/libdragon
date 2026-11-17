@@ -105,7 +105,8 @@ typedef struct h264_s {
     uint8_t *pic;                       ///< Pointer to the decoded picture data
     int idx;                            ///< Current index in the buffer
     int buf_len;                        ///< Number of valid bytes in the buffer
-    int fd;                             ///< File descriptor of the opened H264 file
+    int fd;                             ///< File descriptor of the opened H264 file (-1 with a caller source)
+    const video_source_t *source;       ///< Caller-owned stream, NULL = file descriptor
     bool in_frame_decoding;             ///< True if we have partially decoded a frame 
     uint32_t max_slice_size;            ///< Maximum size of a slice seen so far
     bool has_slice_metadata;            ///< True if the stream advertised max_slice_size
@@ -141,6 +142,21 @@ static void release_current_picture(h264_t *player) {
     }
 }
 
+static int source_read(h264_t *player, void *memory, unsigned bytes) {
+    if (player->source)
+        return player->source->read(player->source->context, memory, bytes);
+    return read(player->fd, memory, bytes);
+}
+
+static void source_seek(h264_t *player, uint32_t offset) {
+    if (player->source) {
+        int failed = player->source->seek(player->source->context, offset);
+        assertf(!failed, "H264 source seek to %lu failed", offset);
+    } else {
+        lseek(player->fd, offset, SEEK_SET);
+    }
+}
+
 static int decode_next_slice(h264_t *player, u32 mb_budget) {
     int left = player->buf_len - player->idx;
 
@@ -148,7 +164,7 @@ static int decode_next_slice(h264_t *player, u32 mb_budget) {
     // compact/move the buffer while a slice is pending.
     if (!h264bsdIsSlicePending(&player->s) && left <= (int)player->max_slice_size) {
         memmove(player->buf, player->buf+player->idx, left);
-        int n = read(player->fd, player->buf+left, H264_BUF_SIZE-left);
+        int n = source_read(player, player->buf+left, H264_BUF_SIZE-left);
         if (n < 0) n = 0;
         player->buf_len = left + n;
         player->idx = 0;
@@ -231,7 +247,7 @@ static void h264_rewind(video_t *v) {
     h264_t *player = (h264_t*)v;
 
     release_current_picture(player);
-    lseek(player->fd, 0, SEEK_SET);
+    source_seek(player, 0);
     player->idx = 0;
     player->buf_len = 0;
     player->in_frame_decoding = false;
@@ -268,7 +284,7 @@ static void h264_rewind(video_t *v) {
 }
 
 static video_t* h264_open(const char *fn, const video_parms_t *parms) {
-    h264_t *player = malloc(sizeof(h264_t) + H264_BUF_SIZE);
+    h264_t *player = __video_alloc(sizeof(h264_t) + H264_BUF_SIZE, false);
     assertf(player, "Out of memory");
     sys_hw_memset(player, 0, sizeof(h264_t) + H264_BUF_SIZE);
     player->fd = -1;
@@ -280,7 +296,12 @@ static video_t* h264_open(const char *fn, const video_parms_t *parms) {
     h264bsdInitStorage(&player->s);
     h264bsdSetNumBufferedPics(&player->s, (u32)player->max_buffered_pics);
     
-    player->fd = must_open(fn);
+    if (parms && parms->source) {
+        assertf(parms->source->read && parms->source->seek, "Invalid H264 source");
+        player->source = parms->source;
+    } else {
+        player->fd = must_open(fn);
+    }
     h264_rewind(&player->video);
 
     // Fetch video information
@@ -301,7 +322,7 @@ static void h264_close(video_t *v) {
         player->fd = -1;
     }
     h264bsdShutdown(&player->s);
-    free(player);
+    __video_free(player, false);
 }
 
 static const char* h264_status_str(int status) {
@@ -451,7 +472,7 @@ static void h264_seekfast(video_t *v, int frame_idx, uint32_t file_off)
 
     // Seek the underlying file to the specified offset, so that we're
 	// ready for next frame.
-	lseek(player->fd, file_off, SEEK_SET);
+	source_seek(player, file_off);
     player->idx = 0;
     player->buf_len = 0;
 }    
@@ -484,4 +505,5 @@ video_codec_t h264_codec = {
     .next_frame = h264_next_frame,
     .rewind = h264_rewind,
     .seekfast = h264_seekfast,
+    .custom_resources = true,
 };

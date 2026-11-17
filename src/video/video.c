@@ -107,19 +107,27 @@ void video_register_codec(video_codec_t *codec)
 video_t* video_open(const char *fn, const video_parms_t *parms)
 {
     video_codec_t *codec = registered_codecs;
+    const video_allocator_t *allocator = parms ? parms->allocator : NULL;
+    bool custom = parms && (parms->allocator || parms->source);
 
     const char *ext = strrchr(fn, '.');
     assertf(ext, "File %s has no extension", fn);
 
     while (codec) {
         if (strcmp(codec->extension, ext) == 0) {
+            assertf(!custom || codec->custom_resources,
+                "Video codec %s does not support caller allocator/source", codec->extension);
+            const video_allocator_t *previous = __video_allocator_enter(allocator);
             video_t *v = codec->open(fn, parms);
+            __video_allocator_leave(previous);
             if (v) {
                 v->codec = codec;
+                v->allocator = allocator;
 
                 // If the codec support fast seeking, check if there is a seek
-                // table for this video
-                if (v->codec->seekfast) {                
+                // table for this video. Caller-owned resources never touch the
+                // file system or the process heap, so they have no sidecar.
+                if (v->codec->seekfast && !custom) {
                     int fnlen = strlen(fn), extlen = strlen(ext);
                     char *seekfn = alloca(fnlen - extlen + strlen(".seek") + 1);
                     strcpy(seekfn, fn);
@@ -142,11 +150,13 @@ video_t* video_open(const char *fn, const video_parms_t *parms)
 
 void video_close(video_t *v)
 {
+    const video_allocator_t *previous = __video_allocator_enter(v->allocator);
     if (v->seektable) {
         video_seektable_free(v->seektable);
         v->seektable = NULL;
     }
     v->codec->close(v);
+    __video_allocator_leave(previous);
 }
 
 video_info_t video_get_info(video_t *v)
@@ -157,12 +167,18 @@ video_info_t video_get_info(video_t *v)
 int video_poll(video_t *v)
 {
     if (!v->codec->poll) return 0;
-    return v->codec->poll(v);
+    const video_allocator_t *previous = __video_allocator_enter(v->allocator);
+    int result = v->codec->poll(v);
+    __video_allocator_leave(previous);
+    return result;
 }
 
 bool video_next_frame(video_t *v)
 {
-    return v->codec->next_frame(v);
+    const video_allocator_t *previous = __video_allocator_enter(v->allocator);
+    bool result = v->codec->next_frame(v);
+    __video_allocator_leave(previous);
+    return result;
 }
 
 yuv_frame_t video_get_frame(video_t *v)
@@ -172,23 +188,25 @@ yuv_frame_t video_get_frame(video_t *v)
 
 void video_rewind(video_t *v)
 {
+    const video_allocator_t *previous = __video_allocator_enter(v->allocator);
     v->codec->rewind(v);
+    __video_allocator_leave(previous);
 }
 
 int video_seek(video_t *v, int frame_idx)
 {
+    const video_allocator_t *previous = __video_allocator_enter(v->allocator);
+    int result = -1;
     if (v->seektable) {
         int keyframe_idx = frame_idx;
         uint32_t keyframe_off = video_seektable_lookup(v->seektable, &keyframe_idx);
         v->codec->seekfast(v, keyframe_idx, keyframe_off);
-        return keyframe_idx;
+        result = keyframe_idx;
+    } else if (v->codec->seek) {
+        result = v->codec->seek(v, frame_idx);
     }
-
-    if (v->codec->seek) {
-        return v->codec->seek(v, frame_idx);
-    }
-    
-    return -1;
+    __video_allocator_leave(previous);
+    return result;
 }
 
 bool video_is_seekable(video_t *v, int frame_idx)

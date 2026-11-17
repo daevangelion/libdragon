@@ -55,6 +55,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "preview.h"
 #include "graphics.h"
 #include "rdpq_tex.h"
@@ -81,6 +82,20 @@ void yuv_init(void);
  */
 LIBDRAGON_PREVIEW_API
 void yuv_close(void);
+
+/**
+ * @brief Use caller-owned storage for the U/V interleave buffer.
+ * @preview
+ *
+ * The blit setup interleaves the U and V planes into a (width/2 x height/2)
+ * IA16 buffer (width*height/2 bytes). By default it is allocated lazily with
+ * #surface_alloc; applications that freeze their heap pass storage here.
+ * @p buffer must be 16-byte aligned, @p bytes a multiple of 16, and the memory
+ * is only touched by RSP/RDP DMA until replaced or until @p buffer is NULL
+ * (back to #surface_alloc). Call it with no blit in flight.
+ */
+LIBDRAGON_PREVIEW_API
+void yuv_set_interleave_buffer(void *buffer, size_t bytes);
 
 /**
  * @brief A YUV colorspace

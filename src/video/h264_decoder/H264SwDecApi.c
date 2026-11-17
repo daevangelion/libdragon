@@ -79,12 +79,22 @@ void H264SwDecTrace(char *string) {
     UNUSED(string);
 }
 
+#include "../video_internal.h"
+
 void* H264SwDecMalloc(u32 size) {
-    return malloc(size);
+    return __video_alloc(size, false);
 }
 
 void H264SwDecFree(void *ptr) {
-    free(ptr);
+    __video_free(ptr, false);
+}
+
+void* H264SwDecMallocUncached(u32 size) {
+    return __video_alloc(size, true);
+}
+
+void H264SwDecFreeUncached(void *ptr) {
+    __video_free(ptr, true);
 }
 
 #ifndef H264BSD_N64

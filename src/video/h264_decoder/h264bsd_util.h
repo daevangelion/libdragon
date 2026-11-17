@@ -147,7 +147,7 @@
 #if H264BSD_N64
 #define ALLOCATE_PIXELS(ptr, count, type) \
 { \
-    (ptr) = malloc_uncached((count) * sizeof(type)); \
+    (ptr) = H264SwDecMallocUncached((count) * sizeof(type)); \
     assertf((ptr), "Out of memory"); \
 }
 #else
@@ -166,7 +166,7 @@
 #if H264BSD_N64
 #define FREE_PIXELS(ptr) \
 { \
-    free_uncached((ptr)); (ptr) = NULL; \
+    H264SwDecFreeUncached((ptr)); (ptr) = NULL; \
 }
 #else
 #define FREE_PIXELS(ptr) \

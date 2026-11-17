@@ -48,11 +48,33 @@ const yuv_colorspace_t YUV_BT709_FULL = {
 };
 
 
+/* Optional caller-owned interleave storage; NULL = surface_alloc. */
+static void *external_buffer;
+static size_t external_buffer_bytes;
+
+void yuv_set_interleave_buffer(void *buffer, size_t bytes)
+{
+    assertf(!buffer || (((uintptr_t)buffer | bytes) & 15) == 0,
+        "YUV interleave buffer must be 16-byte aligned and sized");
+    surface_free(&internal_buffer);
+    external_buffer = buffer;
+    external_buffer_bytes = bytes;
+    // Only the RSP writes this storage and only the RDP reads it, but the
+    // caller may have used the memory through the cache before.
+    if (buffer) data_cache_hit_writeback_invalidate(buffer, bytes);
+}
+
 static void resize_internal_buffer(int w, int h)
 {
     if (internal_buffer.width != w || internal_buffer.height != h) {
         surface_free(&internal_buffer);
-        internal_buffer = surface_alloc(FMT_IA16, w, h);
+        if (external_buffer) {
+            assertf((size_t)w * h * 2 <= external_buffer_bytes,
+                "YUV interleave buffer too small: %d bytes needed", w * h * 2);
+            internal_buffer = surface_make(UncachedAddr(external_buffer), FMT_IA16, w, h, w * 2);
+        } else {
+            internal_buffer = surface_alloc(FMT_IA16, w, h);
+        }
     }
 }
 

@@ -165,6 +165,9 @@ extern "C"
 
     /* function prototype for memory free */
     void H264SwDecFree(void *ptr);
+    /* N64 picture storage follows the same optional caller allocator. */
+    void* H264SwDecMallocUncached(u32 size);
+    void H264SwDecFreeUncached(void *ptr);
 
     #ifdef H264BSD_N64
     #include <memory.h>
