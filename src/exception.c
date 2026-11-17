@@ -217,7 +217,7 @@ static void debug_exception(exception_t* ex) {
 }
 #endif
 
-void exception_default_handler(exception_t* ex) {
+__attribute__((weak)) void exception_default_handler(exception_t* ex) {
 	#ifndef NDEBUG
 	static bool backtrace_exception = false;
 

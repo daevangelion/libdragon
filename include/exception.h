@@ -193,6 +193,9 @@ exception_handler_t register_exception_handler( exception_handler_t cb );
  * This handler is installed by default for all exceptions. It initializes
  * the console and dump the exception state to the screen, including the value
  * of all GPR/FPR registers. It then calls abort() to abort execution.
+ * Applications may provide a strong replacement for this weak default to
+ * select a different fatal display without retaining the interactive inspector.
+ * The default behavior is unchanged when no replacement is linked.
  */
 void exception_default_handler( exception_t* ex );
 
