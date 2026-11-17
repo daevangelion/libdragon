@@ -2,6 +2,8 @@
 """Run with a linked N64_TLBCODE ELF; all mutations stay in TMPDIR."""
 import contextlib
 import io
+import json
+import re
 import pathlib
 import runpy
 import struct
@@ -22,12 +24,26 @@ class TlbcodeTests(unittest.TestCase):
 
     def test_generate_rejects_injection_and_oversized_directory(self):
         for text in ('{"Bad": [".text.x"]}', '{"ok": ["*(.text)"]}',
-                     '{' + ','.join(f'"u{i}":[".text.x"]' for i in range(17)) + '}'):
+                     '{' + ','.join(f'"u{i}":[".text.x"]' for i in range(33)) + '}'):
             source = self.root / 'units.json'
             source.write_text(text)
             with self.assertRaises(ValueError):
                 TOOL['generate'](types.SimpleNamespace(units=source,
                     sections=self.root / 'sections.ld', directory=self.root / 'directory.ld'))
+
+    def test_generate_32_units_stays_in_virtual_window(self):
+        source = self.root / 'units.json'
+        source.write_text(json.dumps({f'u{i}': ['.text.x'] for i in range(32)}))
+        sections, directory = self.root / 'sections.ld', self.root / 'directory.ld'
+        TOOL['generate'](types.SimpleNamespace(units=source, sections=sections,
+            directory=directory))
+        addresses = [int(n, 16) for n in re.findall(r'\.tlbcode\.u\d+ (0x[0-9a-f]+)', sections.read_text())]
+        self.assertEqual(addresses, [0xc1000000 + i * 0x80000 for i in range(32)])
+        self.assertEqual(directory.read_text().count('LONG(ADDR('), 32)
+        for address in addresses:
+            self.assertEqual(address % 8192, 0)
+            self.assertLessEqual(address + 62 * 4096, 0xc2000000)
+        self.assertTrue(all(a + 62 * 4096 <= b for a, b in zip(addresses, addresses[1:])))
 
     def test_generate_rejects_data_selectors(self):
         for name in ('.data.x', '.sdata.x', '.bss.x', '.sbss.x'):

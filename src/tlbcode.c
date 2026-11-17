@@ -23,7 +23,7 @@ extern const uint8_t __text_start[], __text_end[];
 extern const uint8_t __tlbcode_boot_start[] __attribute__((weak));
 extern const uint8_t __tlbcode_boot_end[] __attribute__((weak));
 
-#define MAX_UNITS 16
+#define MAX_UNITS 32
 #define MAX_PAGES 62
 #define MAX_PAIRS (MAX_PAGES / 2)
 

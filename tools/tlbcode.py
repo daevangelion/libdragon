@@ -8,6 +8,10 @@ import re
 import struct
 
 PAGE = 4096
+MAX_UNITS = 32
+UNIT_BASE = 0xc1000000
+UNIT_END = 0xc2000000
+UNIT_STRIDE = 0x80000
 NAME = re.compile(r"[a-z][a-z0-9_]{0,30}\Z")
 PATTERN = re.compile(r"[a-zA-Z0-9_./*?\[\]-]+\Z")
 SECTION_PREFIXES = ('.text', '.rodata', '.rdata', 'keep.text', 'keep.rodata',
@@ -16,8 +20,8 @@ SECTION_PREFIXES = ('.text', '.rodata', '.rdata', 'keep.text', 'keep.rodata',
 
 def generate(args):
     units = json.loads(pathlib.Path(args.units).read_text())
-    if not isinstance(units, dict) or not 1 <= len(units) <= 16:
-        raise ValueError("units must be an object with 1..16 entries")
+    if not isinstance(units, dict) or not 1 <= len(units) <= MAX_UNITS:
+        raise ValueError(f"units must be an object with 1..{MAX_UNITS} entries")
     sections, directory = [], []
     for i, (name, patterns) in enumerate(units.items()):
         if not NAME.fullmatch(name) or not isinstance(patterns, list) or not patterns:
@@ -34,7 +38,7 @@ def generate(args):
                 body.append(f"KEEP({pattern}(keep.text.* keep.rodata.*))")
                 body.append(f"{pattern}(.text .text.* .rodata .rodata.* .rdata .gnu.linkonce.t.* .gnu.linkonce.r.*)")
         section = f".tlbcode.{name}"
-        sections.append(f"{section} 0x{0xc1000000 + i * 0x100000:08x} : {{\n" + '\n'.join(body) + f"\n. = ALIGN(4096);\n}} :units\nASSERT(SIZEOF({section}) > 0 && SIZEOF({section}) <= 62 * 4096, \"empty or oversized unit {name} (maximum 62 pages)\")\n")
+        sections.append(f"{section} 0x{UNIT_BASE + i * UNIT_STRIDE:08x} : {{\n" + '\n'.join(body) + f"\n. = ALIGN(4096);\n}} :units\nASSERT(SIZEOF({section}) > 0 && SIZEOF({section}) <= 62 * 4096, \"empty or oversized unit {name} (maximum 62 pages)\")\n")
         directory.extend(f"BYTE({c});" for c in name.encode().ljust(32, b'\0'))
         directory.append(f"LONG(ADDR({section})); LONG(SIZEOF({section}) / 4096);")
     pathlib.Path(args.sections).write_text('\n'.join(sections))
@@ -140,8 +144,8 @@ def pack(args):
             digest.update(elf.span(ph[1], ph[4]))
     units = [(n[9:], s) for n, s in elf.sections.items() if n.startswith('.tlbcode.')]
     units.sort(key=lambda item: item[1][3])
-    if not 1 <= len(units) <= 16:
-        raise ValueError("expected 1..16 code units")
+    if not 1 <= len(units) <= MAX_UNITS:
+        raise ValueError(f"expected 1..{MAX_UNITS} code units")
     report = elf.audit(units)
     offset = (48 + len(units) * 48 + PAGE - 1) & -PAGE
     records, payload = bytearray(), bytearray(offset)
@@ -149,7 +153,7 @@ def pack(args):
         if s[1] != 1 or s[2] & 1:
             raise ValueError("code units must be read-only PROGBITS, not writable or NOBITS")
         if (not NAME.fullmatch(name) or s[3] % 8192 or not s[5] or s[5] % PAGE or
-                s[5] > 62 * PAGE or not 0xc1000000 <= s[3] < 0xc2000000):
+                s[5] > 62 * PAGE or not UNIT_BASE <= s[3] < UNIT_END):
             raise ValueError("invalid unit extent")
         for ph in elf.phdrs:
             if ph[0] == 1 and s[3] < ph[2] + ph[5] and ph[2] < s[3] + s[5]:

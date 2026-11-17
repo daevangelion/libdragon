@@ -212,8 +212,10 @@ Unit data, small data, and BSS remain resident. See `examples/tlbcode` for
 section-based unit.
 
 All normal text uses KSEG2 starting at `0xC0001000`; a small KSEG0 boot path
-installs wired 1 MiB-page pairs before entering it. Units occupy distinct,
-fixed 1 MiB windows starting at `0xC1000000`. Unit sections are not PT_LOAD.
+installs wired 1 MiB-page pairs before entering it. Up to 32 units occupy
+distinct, fixed 512 KiB windows from `0xC1000000` to below `0xC2000000`.
+The unchanged 62-page limit fits entirely inside each window. Unit sections
+are not PT_LOAD; directory capacity does not allocate frames or TLB entries.
 The installed `tlbcode` Python 3 tool generates the linker fragments, extracts
 the page-aligned unit blob, and binds it to a SHA-256 resident ELF build ID.
 The ROM recipe bundles that blob as `.tlbcode`; the deployment compressor
