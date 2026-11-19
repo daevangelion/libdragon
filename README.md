@@ -234,7 +234,24 @@ Call `tlbcode_init()`, find a unit with `tlbcode_find()`, and load it using
 the frame-pointer array remain borrowed until `tlbcode_unload()`. No runtime
 heap allocation or demand paging occurs. Each pair consumes one of the 32 TLB
 slots after the wired resident entries. Oversubscribing these slots fails.
-Loading uses the PI DMA queue and explicit cache maintenance.
+Loading uses the PI DMA queue and explicit cache maintenance: the unit's
+cache lines are invalidated by index (through KSEG0, for the page colours the
+unit uses) rather than by hit operation on the mapped range. That is correct
+on every platform, independent of the mapping, and cheaper for units over
+4 pages (at most one pass over each cache).
+
+A `N64_TLBCODE=1` program runs with `Status.KX`, `SX` and `UX` clear (32-bit
+kernel mode, in which KSEG2 is translated through the TLB; 64-bit integer
+instructions still work). Some FPGA cores do not translate instruction fetches
+from 64-bit KSEG2 when KX is set. The TLB refill vector is therefore
+`0x80000000` (not the XTLB vector `0x80000080`); the mapped boot path installs
+the handler at all four vectors. Consequences: xkphys (`VirtualUncachedAddr64`,
+`sys_vaddr_*`) faults. `io_read` and `io_write` reach PI addresses below
+`0x20000000` through KSEG1 and stop with a named fatal error above that;
+`io_accessible` returns false there, so a misaligned PI read from such an
+address stops at the existing "misaligned transfer not supported at this PI
+address" assertion. The exception frame (`reg_block_t`) carries `badvaddr`,
+read at exception entry.
 
 Serialize load/unload in application code. Before unloading, return out of
 the unit and quiesce every callback, thread, deferred RSP/RDP command, and

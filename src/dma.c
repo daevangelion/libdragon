@@ -11,6 +11,7 @@
 #include "dma.h"
 #include "n64types.h"
 #include "n64sys.h"
+#include "cop0.h"
 #include "vaddr64.h"
 #include "interrupt.h"
 #include "debug.h"
@@ -114,11 +115,63 @@ static void pi_start_write_raw(const void *ram_address, pi_addr_t pi_address, un
     *PI_RD_LEN = len - 1;
 }
 
+/** @brief PI addresses below this are reachable through kseg1 (0xA0000000 | addr). */
+#define PI_KSEG1_LIMIT              0x20000000UL
+
+/**
+ * @brief Whether the CPU runs with 64-bit kernel addressing (Status.KX).
+ *
+ * The TLB-code entrypoint (N64_TLBCODE) runs with KX clear: xkphys is not
+ * reachable then, and PI addresses at or above 512 MiB (which only xkphys can
+ * address) are not accessible with CPU loads and stores.
+ */
+static bool pi_xkphys_available(void)
+{
+    return (C0_STATUS() & C0_STATUS_KX) != 0;
+}
+
+/** @brief Fatal error (also under NDEBUG) for a PI address that needs KX. */
+__attribute__((noreturn, noinline))
+static void pi_address_needs_kx(const char *func, pi_addr_t pi_address)
+{
+    debug_assert_func_f(__FILE__, __LINE__, func, "PI address reachable by CPU",
+        "PI address %08lX needs 64-bit kernel addressing (Status.KX), which "
+        "N64_TLBCODE builds run without; only addresses below 20000000 are "
+        "accessible", (unsigned long)pi_address);
+}
+
+/**
+ * @brief Read a 32-bit word from the PI bus with a CPU load, bypassing caches.
+ *
+ * Addresses below 512 MiB go through kseg1. Higher ones need the 64-bit
+ * uncached segment (xkphys), which requires Status.KX.
+ */
+static uint32_t pi_cpu_load32(pi_addr_t pi_address, const char *func)
+{
+    if (LIKELY(pi_address < PI_KSEG1_LIMIT))
+        return *(volatile uint32_t*)VirtualUncachedAddr(pi_address);
+    if (!pi_xkphys_available())
+        pi_address_needs_kx(func, pi_address);
+    return sys_vaddr_read32(VirtualUncachedAddr64(pi_address));
+}
+
+/** @brief Write a 32-bit word to the PI bus with a CPU store (see #pi_cpu_load32). */
+static void pi_cpu_store32(pi_addr_t pi_address, uint32_t data, const char *func)
+{
+    if (LIKELY(pi_address < PI_KSEG1_LIMIT)) {
+        *(volatile uint32_t*)VirtualUncachedAddr(pi_address) = data;
+        return;
+    }
+    if (!pi_xkphys_available())
+        pi_address_needs_kx(func, pi_address);
+    sys_vaddr_write32(VirtualUncachedAddr64(pi_address), data);
+}
+
 /**
  * @brief Read arbitrary bytes from the PI bus using aligned 32-bit CPU reads.
  *
  * Sub-word CPU accesses to the PI bus are not reliable. Read aligned words
- * through the 64-bit uncached address space and copy out the requested bytes.
+ * through kseg1 (or xkphys above 512 MiB, if available) and copy out the requested bytes.
  *
  * @note This function must be called with interrupts disabled and PI idle.
  */
@@ -129,7 +182,7 @@ static void pi_cpu_read(void *ram_address, pi_addr_t pi_address, unsigned long l
     while (len) {
         unsigned int offset = pi_address & 3;
         unsigned int count = MIN(len, 4 - offset);
-        uint32_t word = sys_vaddr_read32(VirtualUncachedAddr64(pi_address ^ offset));
+        uint32_t word = pi_cpu_load32(pi_address ^ offset, __func__);
         const uint8_t *bytes = (const uint8_t*)&word;
         memcpy(ram, bytes + offset, count);
 
@@ -327,6 +380,11 @@ bool io_accessible(pi_addr_t pi_address)
 
     // Upper half of the PI range is not memory mapped
     if (pi_address >= 0x80000000)
+        return false;
+
+    // Above 512 MiB only xkphys reaches the PI bus, which needs Status.KX
+    // (N64_TLBCODE builds run without it).
+    if (pi_address >= PI_KSEG1_LIMIT && !pi_xkphys_available())
         return false;
 
     // All other addresses are memory mapped and can be accessed via CPU.
@@ -528,12 +586,8 @@ uint32_t io_read(pi_addr_t pi_address)
         pi_address = PhysicalAddr((void*)pi_address);
     }
 
-    // Convert the PI address into a 64-bit virtual address, which allows a wider
-    // range of PI addresses to be accessed.
-    vaddr64_t va64 = VirtualUncachedAddr64(pi_address);
-
     uint32_t sr = dma_wait_and_disable_interrupts();
-    uint32_t retval = sys_vaddr_read32(va64);
+    uint32_t retval = pi_cpu_load32(pi_address, __func__);
     __enable_interrupts(sr);
 
     return retval;
@@ -550,12 +604,8 @@ void io_write(pi_addr_t pi_address, uint32_t data)
         pi_address = PhysicalAddr((void*)pi_address);
     }
 
-    // Convert the PI address into a 64-bit virtual address, which allows a wider
-    // range of PI addresses to be accessed.
-    vaddr64_t va64 = VirtualUncachedAddr64(pi_address);
-
     uint32_t sr = dma_wait_and_disable_interrupts();
-    sys_vaddr_write32(va64, data);
+    pi_cpu_store32(pi_address, data, __func__);
     __enable_interrupts(sr);
 }
 

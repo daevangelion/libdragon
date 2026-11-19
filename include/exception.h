@@ -10,6 +10,7 @@
 #define __LIBDRAGON_EXCEPTION_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 /**
@@ -104,10 +105,20 @@ typedef struct __attribute__((packed))
     uint32_t fc31;
     /** @brief Floating point registers 1-32 */
     uint64_t fpr[32];
+    /**
+     * @brief BadVAddr - COP0 register $8, as it was when the exception was taken
+     *
+     * Only meaningful for TLB and address error exceptions. Read this instead
+     * of the live register, which a nested exception can overwrite.
+     */
+    uint64_t badvaddr;
+    /** @brief Unused: keeps the exception frame 16-byte aligned */
+    uint64_t reserved;
 } reg_block_t;
 
 /* Make sure the structure has the right size. Please keep this in sync with inthandler.S */
-_Static_assert(sizeof(reg_block_t) == 544, "invalid reg_block_t size -- this must match inthandler.S");
+_Static_assert(sizeof(reg_block_t) == 560, "invalid reg_block_t size -- this must match inthandler.S");
+_Static_assert(offsetof(reg_block_t, badvaddr) == 544, "invalid reg_block_t badvaddr offset -- this must match STACK_BADVADDR in inthandler.S");
 
 /**
  * @brief Structure representing an exception

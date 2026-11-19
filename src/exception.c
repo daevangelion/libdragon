@@ -70,7 +70,7 @@ void __exception_dump_header(FILE *out, exception_t* ex) {
 		case EXCEPTION_CODE_TLB_STORE_MISS:
 		case EXCEPTION_CODE_TLB_LOAD_I_MISS:
 		case EXCEPTION_CODE_TLB_MODIFICATION: {
-			uint64_t badvaddr = C0_BADVADDR();
+			uint64_t badvaddr = ex->regs->badvaddr;
 			if ((uint64_t)(int32_t)badvaddr == badvaddr)
 				fprintf(out, "Exception address: %08lX\n", (uint32_t)badvaddr);
 			else
@@ -324,7 +324,7 @@ static const char* __get_exception_name(exception_t *ex)
 	// When possible, by peeking into the exception state and COP0 registers
 	// we can provide a more detailed exception name.
 	uint32_t epc = ex->regs->epc + (ex->regs->cr & C0_CAUSE_BD ? 4 : 0);
-	uint64_t badvaddr = C0_BADVADDR();
+	uint64_t badvaddr = ex->regs->badvaddr;
 
 	if (tlbcode_unloaded_name &&
 		(ex->code == EXCEPTION_CODE_TLB_LOAD_I_MISS ||

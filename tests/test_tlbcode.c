@@ -82,7 +82,7 @@ void test_tlbcode(TestContext *ctx)
     ASSERT_EQUAL_UNSIGNED(tlbcode_test_function(3), 271, "reload returned stale code/data");
     ASSERT(tlbcode_unload(unit), "second unload failed");
 
-    volatile bool caught = false, diagnostic = false;
+    volatile bool caught = false, diagnostic = false, badvaddr_saved = false;
     void handler(exception_t *ex) {
         if (ex->code != EXCEPTION_CODE_TLB_LOAD_I_MISS) {
             exception_default_handler(ex);
@@ -90,15 +90,36 @@ void test_tlbcode(TestContext *ctx)
         }
         caught = true;
         diagnostic = !strcmp(ex->info, "code unit test not loaded");
+        /* An instruction fetch miss reports the fetch address as BadVAddr; the
+         * handler must see it in the exception frame, saved at entry. */
+        badvaddr_saved = ex->regs->badvaddr == (uint64_t)(int64_t)(int32_t)ex->regs->epc;
         ex->regs->epc = (uint32_t)tlb_test_recovered;
     }
     exception_handler_t old = register_exception_handler(handler);
     DEFER(register_exception_handler(old));
     tlbcode_test_function(0);
     ASSERT(caught && diagnostic, "unloaded unit missing named TLB exception");
+    ASSERT(badvaddr_saved, "BadVAddr not saved in the exception frame");
     ASSERT(!tlbcode_address_valid(unit->virtual_base), "unloaded unit still readable");
     memset(second, 0xDD, 32768);
     debugf("tlbcode: load/reload, rodata, symbols, timer/VI, PI queue, unloaded exception PASS\n");
+}
+
+void test_tlbcode_32bit_kernel(TestContext *ctx)
+{
+    /* Some FPGA cores do not translate instruction fetches from 64-bit kseg2
+     * when KX is set: TLB-mapped builds run in 32-bit kernel mode. */
+    ASSERT_EQUAL_HEX(C0_STATUS() & (C0_STATUS_KX | C0_STATUS_SX | C0_STATUS_UX), 0,
+        "64-bit addressing enabled in a TLB-mapped build");
+    /* PI CPU access goes through kseg1 and agrees with DMA. */
+    ASSERT(io_accessible(0x10000000), "cartridge ROM must be CPU accessible");
+    ASSERT(!io_accessible(0x20000000), "xkphys-only PI range reported accessible without KX");
+    uint32_t *rom = malloc_uncached_aligned(16, 16);
+    ASSERT(rom, "cannot allocate PI buffer");
+    DEFER(free_uncached(rom));
+    dma_read(rom, 0x10000000, 16);
+    for (int i = 0; i < 4; i++)
+        ASSERT_EQUAL_HEX(io_read(0x10000000 + i * 4), rom[i], "io_read disagrees with DMA at word %d", i);
 }
 
 void test_tlbcode_dso_rejected(TestContext *ctx)

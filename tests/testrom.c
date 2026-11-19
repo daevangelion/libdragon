@@ -253,6 +253,7 @@ static const struct Testsuite
 #if N64_TLBCODE
 	TEST_FUNC(test_tlbcode,                    0, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_tlbcode_dso_rejected,       0, TEST_FLAGS_NO_BENCHMARK),
+	TEST_FUNC(test_tlbcode_32bit_kernel,       0, TEST_FLAGS_NO_BENCHMARK),
 #endif
 	TEST_FUNC(test_exception,                  5, TEST_FLAGS_NO_BENCHMARK),
 	TEST_FUNC(test_exception_syscall,          0, TEST_FLAGS_NO_BENCHMARK),

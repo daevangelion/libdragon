@@ -307,6 +307,10 @@ void io_write(pi_addr_t pi_address, uint32_t data);
  * 
  * The rest of the 32-bit address range is only accessible via DMA.
  * 
+ * Addresses from 0x2000_0000 up are reached through the 64-bit uncached segment, which
+ * needs Status.KX. Applications built with N64_TLBCODE=1 run with KX clear, so for them
+ * only addresses below 0x2000_0000 are accessible.
+ * 
  * This function checks whether the specified address falls into the range accessible
  * via CPU or not.
  * 

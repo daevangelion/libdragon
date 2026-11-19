@@ -39,7 +39,8 @@ inthandler:
 	.set noat
 	.set noreorder
 
-# The exception stack contains a dump of all GPRs/FPRs. This requires 544 bytes.
+# The exception stack contains a dump of all GPRs/FPRs and a few COP0 registers.
+# This requires 560 bytes.
 # On top of that, we need 32 bytes of empty space at offset 0-31, because
 # that is required by MIPS ABI when calling C functions (it's a space called
 # "argument slots" -- even if the function takes no arguments, or are only passed in 
@@ -50,7 +51,7 @@ inthandler:
 #
 # *NOTE*: this layout is also exposed in C via reg_block_t in exception.h
 # Please keep in sync!
-#define EXC_STACK_SIZE (544+32)
+#define EXC_STACK_SIZE (560+32)
 #define STACK_GPR      32
 #define STACK_HI     (STACK_GPR+(32*8))
 #define STACK_LO     (STACK_HI+8)
@@ -59,8 +60,16 @@ inthandler:
 #define STACK_EPC    (STACK_CR+4)
 #define STACK_FC31   (STACK_EPC+4)
 #define STACK_FPR    (STACK_FC31+4)
+#define STACK_BADVADDR (STACK_FPR+(32*8))
 
+	# Read BadVAddr before anything else can modify it. K1 is free to use here
+	# (it is not saved: the vector stubs may have clobbered K0 already). BadVAddr
+	# is only meaningful for TLB and address error exceptions; it is saved
+	# unconditionally with the other COP0 registers so that reports do not read
+	# a register that a nested exception may have overwritten.
+	dmfc0 k1, $8
 	addiu sp, -EXC_STACK_SIZE
+	sd k1, STACK_BADVADDR(sp)
 
 	# Save caller-saved GPRs only. These are the only
 	# ones required to call a C function from assembly, as the

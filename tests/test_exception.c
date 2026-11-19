@@ -315,7 +315,12 @@ void test_exception(TestContext *ctx) {
     ASSERT_EQUAL_HEX(exception_regs.epc, (uint32_t)&test_exception_opcode, "EPC not available to the handler");
 
     // If the other tests change SR these may fail unnecessarily, but we expect tests to do proper cleanup
+#if N64_TLBCODE
+    // TLB-mapped builds run in 32-bit kernel mode: no KX/SX/UX (0xE0)
+    ASSERT_EQUAL_HEX(exception_regs.sr, 0x24101403, "SR not available to the handler");
+#else
     ASSERT_EQUAL_HEX(exception_regs.sr, 0x241014E3, "SR not available to the handler");
+#endif
     ASSERT_EQUAL_HEX(exception_regs.cr, 0x8, "CR not available to the handler");
     ASSERT_EQUAL_HEX(exception_regs.fc31, 0x0, "FCR31 not available to the handler");
 }

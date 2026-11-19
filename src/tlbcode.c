@@ -167,6 +167,36 @@ static void map_pair(unsigned slot, uint32_t va, uint32_t even, uint32_t odd)
     asm volatile("sync" ::: "memory");
 }
 
+/* Invalidate the cache lines a unit's pages can occupy, by index.
+ *
+ * The VR4300 caches are indexed by virtual address and tagged by physical
+ * address: the instruction cache is 16 KiB (index = VA bits 13:5), the data
+ * cache 8 KiB (VA bits 12:4), so the page colour of a unit page is VA bits
+ * 13:12 (bit 12 for data). A frame reused by another unit, at the same colour,
+ * could otherwise hit stale code or rodata. Index operations take the cache
+ * index from the operand address and ignore the tag, so they are applied to
+ * kseg0 addresses of the same colours: the result is correct on every
+ * platform, does not depend on the unit's mapping (no TLB lookup, no fault),
+ * and is cheaper than hit operations over the mapped range for units larger
+ * than 4 pages: at most one pass over each cache (512 instruction and 512
+ * data lines) instead of 128 instruction and 256 data lines per page.
+ * Data lines are written back: they can belong to unrelated memory sharing
+ * the index. Units are read-only, so unit lines are never dirty.
+ */
+static void unit_cache_invalidate(uint32_t va, unsigned pages, bool data)
+{
+    unsigned colors = 0;
+    for (unsigned i = 0; i < pages && colors != 0xF; i++)
+        colors |= 1u << (((va >> 12) + i) & 3);
+    for (unsigned c = 0; c < 4; c++)
+        if (colors & (1u << c))
+            inst_cache_index_invalidate((uint8_t*)KSEG0_START_ADDR + c * 0x1000, 0x1000);
+    if (!data) return;
+    for (unsigned c = 0; c < 2; c++)
+        if (colors & (0x5u << c))
+            data_cache_index_writeback_invalidate((uint8_t*)KSEG0_START_ADDR + c * 0x1000, 0x1000);
+}
+
 bool tlbcode_load(const tlbcode_unit_t *unit, void *const frames[], size_t count)
 {
     int index = unit_index(unit);
@@ -203,8 +233,8 @@ bool tlbcode_load(const tlbcode_unit_t *unit, void *const frames[], size_t count
             (PhysicalAddr(frames[i * 2 + 1]) >> 6) | 0x1B : 1;
         map_pair(slot, unit->virtual_base + i * 8192, even, odd);
     }
-    /* Hit operations need the mapping; do these before publishing loaded. */
-    inst_cache_hit_invalidate((void*)unit->virtual_base, count * TLBCODE_PAGE_SIZE);
+    /* Stale instructions: see unit_cache_invalidate. */
+    unit_cache_invalidate(unit->virtual_base, count, false);
     asm volatile("sync" ::: "memory");
     state[index].frames = frames;
     state[index].loaded = true;
@@ -218,9 +248,8 @@ bool tlbcode_unload(const tlbcode_unit_t *unit)
     int index = unit_index(unit);
     if (busy || index < 0 || !state[index].loaded) return false;
     disable_interrupts();
-    /* Invalidate both caches while VA translations still exist. */
-    inst_cache_hit_invalidate((void*)unit->virtual_base, unit->page_count * TLBCODE_PAGE_SIZE);
-    data_cache_hit_invalidate((void*)unit->virtual_base, unit->page_count * TLBCODE_PAGE_SIZE);
+    /* Leave no cache line behind for the frames about to be returned. */
+    unit_cache_invalidate(unit->virtual_base, unit->page_count, true);
     for (unsigned i = 0; i < (unit->page_count + 1) / 2; i++) {
         unsigned slot = state[index].slots[i];
         map_pair(slot, 0x40000000 + slot * 8192, 0, 0);

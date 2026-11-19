@@ -24,7 +24,16 @@ _start:
 	la gp, _gp
 
 	/* a bit from libgloss so we start at a known state */
+#ifdef N64_TLBCODE_BOOT
+	/* No KX/SX/UX: with KX set, some FPGA cores do not translate instruction
+	   fetches from 64-bit kseg2 (0xFFFFFFFFC0000000...) through the TLB. In
+	   32-bit kernel mode kseg2 is mapped as usual, and 64-bit instructions
+	   remain available in kernel mode. The TLB refill vector is then
+	   0x80000000 instead of 0x80000080: entrypoint_tlbcode.S fills both. */
+	li v0,SR_CU1|SR_PE|SR_FR
+#else
 	li v0,SR_CU1|SR_PE|SR_FR|SR_KX|SR_SX|SR_UX
+#endif
 	mtc0 v0,C0_SR
 
 

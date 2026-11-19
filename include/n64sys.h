@@ -115,6 +115,10 @@ extern int __boot_tvtype;
  * Use sys_vaddr_readN and sys_vaddr_writeN to read from and write to 64-bit virtual
  * addresses.
  * 
+ * @note Accessing these addresses requires Status.KX. Applications built with
+ *       N64_TLBCODE=1 run with KX clear, and a 64-bit address then raises an
+ *       address error.
+ * 
  * @param[in] _addr     Physical address to convert to a virtual address
  * 
  * @return A 64-bit virtual address to access the physical address
